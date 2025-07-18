@@ -28,6 +28,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class Autofish {
+    // Track last tick's atCoords state to avoid spamming sound
+    private boolean wasAtCoords = true;
 
     private MinecraftClient client;
     private FabricModAutofish modAutofish;
@@ -47,7 +49,20 @@ public class Autofish {
 
         //Initiate the repeating action for persistent mode casting
         modAutofish.getScheduler().scheduleRepeatingAction(10000, () -> {
-            if(!modAutofish.getConfig().isPersistentMode()) return;
+            if (!modAutofish.getConfig().isPersistentMode()) return;
+            if (!modAutofish.getConfig().isAutofishEnabled()) return;
+            boolean onlyAtCoords = modAutofish.getConfig().isOnlyAutofishAtSavedCoords();
+            if (onlyAtCoords) {
+                double savedX = modAutofish.getConfig().getSavedX();
+                double savedY = modAutofish.getConfig().getSavedY();
+                double savedZ = modAutofish.getConfig().getSavedZ();
+                double px = client.player != null ? client.player.getX() : 0;
+                double py = client.player != null ? client.player.getY() : 0;
+                double pz = client.player != null ? client.player.getZ() : 0;
+                double dist = Math.sqrt(Math.pow(px - savedX, 2) + Math.pow(py - savedY, 2) + Math.pow(pz - savedZ, 2));
+                boolean atCoords = dist < 1.0;
+                if (!atCoords) return;
+            }
             if(modAutofish.getConfig().isNoBreak() && getHeldItem().getDamage() >= 63) return;
             if(!isHoldingFishingRod()) return;
             if(hookExists){
@@ -62,8 +77,38 @@ public class Autofish {
     public void tick(MinecraftClient client) {
 
         if (client.world != null && client.player != null && modAutofish.getConfig().isAutofishEnabled()) {
+            boolean onlyAtCoords = modAutofish.getConfig().isOnlyAutofishAtSavedCoords();
+            double savedX = modAutofish.getConfig().getSavedX();
+            double savedY = modAutofish.getConfig().getSavedY();
+            double savedZ = modAutofish.getConfig().getSavedZ();
+            double px = client.player.getX();
+            double py = client.player.getY();
+            double pz = client.player.getZ();
+            double dist = Math.sqrt(Math.pow(px - savedX, 2) + Math.pow(py - savedY, 2) + Math.pow(pz - savedZ, 2));
+            boolean atCoords = dist < 1.0; // within 1 block
 
-           timeMillis = Util.getMeasuringTimeMs(); //update current working time for this tick
+            // Play sound and stop autofishing if player leaves saved coords
+            if (onlyAtCoords) {
+                if (!atCoords && wasAtCoords) {
+                    client.player.playSound(net.minecraft.sound.SoundEvents.ENTITY_ENDER_DRAGON_GROWL, 3.0F, 1.0F);
+                    client.player.playSound(net.minecraft.sound.SoundEvents.ENTITY_WITHER_SPAWN, 3.0F, 1.0F);
+                    client.player.playSound(net.minecraft.sound.SoundEvents.ENTITY_LIGHTNING_BOLT_THUNDER, 3.0F, 1.0F);
+                    client.player.playSound(net.minecraft.sound.SoundEvents.ENTITY_ENDER_DRAGON_DEATH, 3.0F, 1.0F);
+                    client.player.playSound(net.minecraft.sound.SoundEvents.ENTITY_GHAST_SCREAM, 3.0F, 1.0F);
+                }
+                wasAtCoords = atCoords;
+                if (!atCoords) {
+                    removeHook();
+                    // Disable autofishing when player leaves saved coords
+                    modAutofish.getConfig().setAutofishEnabled(false);
+                    modAutofish.getConfigManager().writeConfig(true);
+                    return;
+                }
+            } else {
+                wasAtCoords = true; // reset if not using onlyAtCoords
+            }
+
+            timeMillis = Util.getMeasuringTimeMs(); //update current working time for this tick
 
             if (isHoldingFishingRod()) {
                 if (client.player.fishHook != null) {
@@ -78,6 +123,8 @@ public class Autofish {
             } else { //not holding fishing rod
                 removeHook();
             }
+        } else {
+            wasAtCoords = true;
         }
     }
 

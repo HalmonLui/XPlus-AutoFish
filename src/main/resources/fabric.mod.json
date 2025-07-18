@@ -2,22 +2,13 @@
   "schemaVersion": 1,
   "id": "autofish",
   "version": "${version}",
-  "name": "XPlus Autofish",
+  "name": "Noms Autofisher",
   "description": "Automatically reels in and recasts your fishing rod when you catch a fish. Now for 1.19.4+.",
   "authors": [
-    "troyboy50",
-    "Wudji"
+    "Nom"
   ],
   "contributors": [
-    "7coil",
-    "VriskaSerket51",
-    "5HT2",
-    "DrakoTrogdor",
-    "Q2297045667",
-    "cbackas",
-    "ChloeDawn",
-    "DrakoTrogdor",
-    "myl7"
+    "linganguliguli"
   ],
   "contact": {
     "homepage": "https://www.curseforge.com/minecraft/mc-mods/x-autofish",

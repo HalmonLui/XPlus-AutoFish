@@ -5,6 +5,7 @@ import me.shedaniel.clothconfig2.api.ConfigBuilder;
 import me.shedaniel.clothconfig2.api.ConfigCategory;
 import me.shedaniel.clothconfig2.api.ConfigEntryBuilder;
 import me.shedaniel.clothconfig2.impl.builders.SubCategoryBuilder;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
 import troy.autofish.FabricModAutofish;
@@ -37,6 +38,54 @@ public class AutofishScreenBuilder {
         ConfigEntryBuilder entryBuilder = builder.entryBuilder();
         ConfigCategory configCat = builder.getOrCreateCategory(Text.translatable("options.autofish.config"));
 
+        // Saved Coordinates Field (manual entry)
+        AbstractConfigListEntry<?> savedCoordsField = entryBuilder.startTextField(
+                Text.literal("Saved Coordinates (x, y, z)"),
+                String.format("%.2f, %.2f, %.2f", config.getSavedX(), config.getSavedY(), config.getSavedZ())
+        )
+        .setTooltip(Text.literal("Edit or paste coordinates here. Format: x, y, z"))
+        .setSaveConsumer(str -> {
+            String[] parts = str.split(",");
+            if (parts.length == 3) {
+                try {
+                    double x = Double.parseDouble(parts[0].trim());
+                    double y = Double.parseDouble(parts[1].trim());
+                    double z = Double.parseDouble(parts[2].trim());
+                    modAutofish.getConfig().setSavedCoords(x, y, z);
+                } catch (NumberFormatException ignored) {}
+            }
+        })
+        .build();
+
+        // Set Saved Coordinates to Current Position Toggle
+        AbstractConfigListEntry<?> setCoordsToCurrentToggle = entryBuilder.startBooleanToggle(
+                Text.literal("Set Saved Coordinates to Current Position"),
+                false
+        )
+        .setTooltip(Text.literal("Enable to set the saved coordinates to your current player position."))
+        .setSaveConsumer(newValue -> {
+            if (newValue && MinecraftClient.getInstance().player != null) {
+                double x = MinecraftClient.getInstance().player.getX();
+                double y = MinecraftClient.getInstance().player.getY();
+                double z = MinecraftClient.getInstance().player.getZ();
+                modAutofish.getConfig().setSavedCoords(x, y, z);
+                modAutofish.getConfigManager().writeConfig(true);
+            }
+        })
+        .setYesNoTextSupplier(yesNoTextSupplier)
+        .build();
+
+        // Only Autofish at Saved Coordinates Toggle
+        AbstractConfigListEntry onlyAtCoordsToggle = entryBuilder.startBooleanToggle(
+                Text.translatable("options.autofish.only_at_coords.title"),
+                config.isOnlyAutofishAtSavedCoords())
+                .setDefaultValue(false)
+                .setTooltip(Text.translatable("options.autofish.only_at_coords.tooltip"))
+                .setSaveConsumer(newValue -> {
+                    modAutofish.getConfig().setOnlyAutofishAtSavedCoords(newValue);
+                })
+                .setYesNoTextSupplier(yesNoTextSupplier)
+                .build();
 
         //Enable Autofish
         AbstractConfigListEntry toggleAutofish = entryBuilder.startBooleanToggle(Text.translatable("options.autofish.enable.title"), config.isAutofishEnabled())
@@ -198,7 +247,10 @@ public class AutofishScreenBuilder {
         subCatBuilderBasic.add(toggleMultiRod);
         subCatBuilderBasic.add(toggleOpenWaterDetection);
         subCatBuilderBasic.add(toggleBreakProtection);
-        subCatBuilderBasic.add((togglePersistentMode));
+        subCatBuilderBasic.add(togglePersistentMode);
+        subCatBuilderBasic.add(savedCoordsField);
+        subCatBuilderBasic.add(setCoordsToCurrentToggle);
+        subCatBuilderBasic.add(onlyAtCoordsToggle);
         subCatBuilderBasic.setExpanded(true);
 
         SubCategoryBuilder subCatBuilderAdvanced = entryBuilder.startSubCategory(Text.translatable("options.autofish.advanced.title"));

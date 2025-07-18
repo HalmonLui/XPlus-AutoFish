@@ -14,7 +14,26 @@ public class Config {
     @Expose long recastDelay = 1500;
     @Expose long randomPercent = 50;
     @Expose long reelInDelay = 1;
-    @Expose String clearLagRegex = "\\[ClearLag\\] Removed [0-9]+ Entities!";
+    @Expose String clearLagRegex = "[ClearLag] Removed [0-9]+ Entities!";
+
+    // New fields for saved coordinates and toggle
+    @Expose private double savedX = 0;
+    @Expose private double savedY = 0;
+    @Expose private double savedZ = 0;
+    @Expose private boolean onlyAutofishAtSavedCoords = false;
+    // Saved coordinates
+    public void setSavedCoords(double x, double y, double z) {
+        this.savedX = x;
+        this.savedY = y;
+        this.savedZ = z;
+    }
+    public double getSavedX() { return savedX; }
+    public double getSavedY() { return savedY; }
+    public double getSavedZ() { return savedZ; }
+
+    // Only autofish at saved coords
+    public boolean isOnlyAutofishAtSavedCoords() { return onlyAutofishAtSavedCoords; }
+    public void setOnlyAutofishAtSavedCoords(boolean value) { this.onlyAutofishAtSavedCoords = value; }
 
     public boolean isAutofishEnabled() {
         return isAutofishEnabled;
