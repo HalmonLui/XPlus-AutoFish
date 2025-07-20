@@ -12,6 +12,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.s2c.play.GameMessageS2CPacket;
+import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.Hand;
@@ -41,6 +42,30 @@ public class Autofish {
     private long hookRemovedAt = 0L;
 
     public long timeMillis = 0L;
+
+    // Smooth rotation fields
+    private boolean rotatingToToss = false;
+    private boolean rotatingBack = false;
+    private boolean shouldToss = true;
+    private float targetYaw = 0f;
+    private float targetPitch = 0f;
+    private float originalYaw = 0f;
+    private float originalPitch = 0f;
+
+    private float normalizeAngle(float angle) {
+        angle = angle % 360f;
+        if (angle >= 180f) angle -= 360f;
+        if (angle < -180f) angle += 360f;
+        return angle;
+    }
+
+    private float approachAngle(float current, float target, float step) {
+        float delta = normalizeAngle(target - current);
+        if (Math.abs(delta) <= step) {
+            return target;
+        }
+        return current + Math.signum(delta) * step;
+    }
 
     public Autofish(FabricModAutofish modAutofish) {
         this.modAutofish = modAutofish;
@@ -75,6 +100,119 @@ public class Autofish {
     }
 
     public void tick(MinecraftClient client) {
+
+        // Auto Toss Items logic (after autofish logic)
+        if (modAutofish.getConfig().isAutoTossEnabled() && client.player != null && modAutofish.getConfig().isAutofishEnabled()) {
+            PlayerInventory inv = client.player.getInventory();
+            // Consider inventory full if all main inventory slots (9+) are non-empty
+            boolean full = true;
+            for (int i = 9; i < inv.main.size(); i++) {
+                if (inv.main.get(i).isEmpty()) {
+                    full = false;
+                    break;
+                }
+            }
+
+            // Check if there are any matching items to toss
+            boolean hasMatching = false;
+            String[] tossList = modAutofish.getConfig().getAutoTossItems().toLowerCase().split(",");
+            if (full) {
+                outer: for (int i = 9; i < inv.main.size(); i++) {
+                    ItemStack stack = inv.main.get(i);
+                    if (!stack.isEmpty()) {
+                        String name = stack.getName().getString().toLowerCase();
+                        for (String s : tossList) {
+                            if (!s.trim().isEmpty() && name.contains(s.trim())) {
+                                hasMatching = true;
+                                break outer;
+                            }
+                        }
+                    }
+                }
+            }
+
+            float currentYaw = client.player.getYaw();
+            float currentPitch = client.player.getPitch();
+
+            // Only trigger toss logic once per full event AND if there are matching items
+            if (full && hasMatching) {
+                // Set up target rotation if not already rotating
+                if (!rotatingToToss && !rotatingBack && shouldToss) {
+                    originalYaw = currentYaw;
+                    originalPitch = currentPitch;
+                    targetYaw = normalizeAngle(currentYaw - 90.0F); // 90 deg left
+                    targetPitch = 0.0F;
+                    rotatingToToss = true;
+                    shouldToss = false;
+                }
+            } else if (!rotatingBack && !rotatingToToss) {
+                // Reset toss state if inventory is not full or no matching items and not rotating back
+                shouldToss = true;
+            }
+
+            // Always allow rotation to finish if in progress
+            if (rotatingToToss) {
+                // Smoothly rotate to toss direction
+                float newYaw = approachAngle(currentYaw, targetYaw, 10.0F);
+                float newPitch = approachAngle(currentPitch, targetPitch, 10.0F);
+
+                client.player.setYaw(newYaw);
+                client.player.setPitch(newPitch);
+                client.player.setHeadYaw(newYaw);
+                client.player.setBodyYaw(newYaw);
+
+                double x = client.player.getX();
+                double y = client.player.getY();
+                double z = client.player.getZ();
+                boolean onGround = client.player.isOnGround();
+
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.PositionAndOnGround(x, y, z, onGround));
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(newYaw, newPitch, onGround));
+
+                if (Math.abs(normalizeAngle(newYaw - targetYaw)) < 1.0 && Math.abs(newPitch - targetPitch) < 1.0) {
+                    // Reached toss rotation — toss items now
+                    int syncId = client.player.currentScreenHandler.syncId;
+                    for (int i = 9; i < inv.main.size(); i++) {
+                        ItemStack stack = inv.main.get(i);
+                        if (!stack.isEmpty()) {
+                            String name = stack.getName().getString().toLowerCase();
+                            for (String s : tossList) {
+                                if (!s.trim().isEmpty() && name.contains(s.trim())) {
+                                    client.interactionManager.clickSlot(syncId, i, 999, net.minecraft.screen.slot.SlotActionType.THROW, client.player);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    rotatingToToss = false;
+                    rotatingBack = true;
+                }
+            }
+            if (rotatingBack) {
+                // Smoothly rotate back to original
+                float newYaw = approachAngle(currentYaw, originalYaw, 10.0F);
+                float newPitch = approachAngle(currentPitch, originalPitch, 10.0F);
+
+                client.player.setYaw(newYaw);
+                client.player.setPitch(newPitch);
+                client.player.setHeadYaw(newYaw);
+                client.player.setBodyYaw(newYaw);
+
+                double x = client.player.getX();
+                double y = client.player.getY();
+                double z = client.player.getZ();
+                boolean onGround = client.player.isOnGround();
+
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.PositionAndOnGround(x, y, z, onGround));
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(newYaw, newPitch, onGround));
+
+                if (Math.abs(normalizeAngle(newYaw - originalYaw)) < 1.0 && Math.abs(newPitch - originalPitch) < 1.0) {
+                    // Finished rotating back
+                    rotatingBack = false;
+                    shouldToss = true; // allow next toss event
+                }
+            }
+        }
 
         if (client.world != null && client.player != null && modAutofish.getConfig().isAutofishEnabled()) {
             boolean onlyAtCoords = modAutofish.getConfig().isOnlyAutofishAtSavedCoords();

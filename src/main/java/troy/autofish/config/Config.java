@@ -1,3 +1,4 @@
+
 package troy.autofish.config;
 
 import com.google.gson.annotations.Expose;
@@ -21,6 +22,16 @@ public class Config {
     @Expose private double savedY = 0;
     @Expose private double savedZ = 0;
     @Expose private boolean onlyAutofishAtSavedCoords = false;
+
+        // Auto Toss Items
+    @Expose private boolean autoTossEnabled = false;
+    @Expose private String autoTossItems = "pufferfish,bow,enchanted book,fishing rod";
+
+    public boolean isAutoTossEnabled() { return autoTossEnabled; }
+    public void setAutoTossEnabled(boolean value) { this.autoTossEnabled = value; }
+    public String getAutoTossItems() { return autoTossItems; }
+    public void setAutoTossItems(String value) { this.autoTossItems = value; }
+    
     // Saved coordinates
     public void setSavedCoords(double x, double y, double z) {
         this.savedX = x;

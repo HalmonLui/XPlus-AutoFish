@@ -254,7 +254,33 @@ public class AutofishScreenBuilder {
         subCatBuilderBasic.setExpanded(true);
 
         SubCategoryBuilder subCatBuilderAdvanced = entryBuilder.startSubCategory(Text.translatable("options.autofish.advanced.title"));
+        // Auto Toss Items Toggle
+        AbstractConfigListEntry<?> autoTossToggle = entryBuilder.startBooleanToggle(
+                Text.literal("Enable Auto Toss Items"),
+                config.isAutoTossEnabled()
+        )
+        .setDefaultValue(false)
+        .setTooltip(Text.literal("Automatically tosses specified items if your inventory is full. Only affects main inventory, not hotbar or held items."))
+        .setSaveConsumer(newValue -> {
+            modAutofish.getConfig().setAutoTossEnabled(newValue);
+        })
+        .setYesNoTextSupplier(yesNoTextSupplier)
+        .build();
+
+        // Auto Toss Items List Field
+        AbstractConfigListEntry<?> autoTossItemsField = entryBuilder.startTextField(
+                Text.literal("Auto Toss Items (comma-separated)"),
+                config.getAutoTossItems()
+        )
+        .setTooltip(Text.literal("List of items to toss when inventory is full. Use Minecraft item IDs, e.g.: minecraft:pufferfish,minecraft:bow,minecraft:enchanted_book,minecraft:fishing_rod"))
+        .setSaveConsumer(newValue -> {
+            modAutofish.getConfig().setAutoTossItems(newValue);
+        })
+        .build();
+
         subCatBuilderAdvanced.add(toggleSoundDetection);
+        subCatBuilderAdvanced.add(autoTossToggle);
+        subCatBuilderAdvanced.add(autoTossItemsField);
         subCatBuilderAdvanced.add(toggleForceMPDetection);
         subCatBuilderAdvanced.add(recastDelaySlider);
         subCatBuilderAdvanced.add(randomDelaySlider);
