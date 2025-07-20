@@ -27,11 +27,20 @@ public class Config {
     @Expose private boolean autoTossEnabled = false;
     @Expose private String autoTossItems = "pufferfish,bow,enchanted book,fishing rod";
 
+    // Auto Toss Stack Behind
+    @Expose private boolean autoTossStackBehindEnabled = false;
+    @Expose private String autoTossStackBehindItems = "pufferfish,bow,enchanted book,fishing rod";
+
     public boolean isAutoTossEnabled() { return autoTossEnabled; }
     public void setAutoTossEnabled(boolean value) { this.autoTossEnabled = value; }
     public String getAutoTossItems() { return autoTossItems; }
     public void setAutoTossItems(String value) { this.autoTossItems = value; }
-    
+
+    public boolean isAutoTossStackBehindEnabled() { return autoTossStackBehindEnabled; }
+    public void setAutoTossStackBehindEnabled(boolean value) { this.autoTossStackBehindEnabled = value; }
+    public String getAutoTossStackBehindItems() { return autoTossStackBehindItems; }
+    public void setAutoTossStackBehindItems(String value) { this.autoTossStackBehindItems = value; }
+
     // Saved coordinates
     public void setSavedCoords(double x, double y, double z) {
         this.savedX = x;

@@ -278,9 +278,34 @@ public class AutofishScreenBuilder {
         })
         .build();
 
+        // --- Auto Toss Stack Behind ---
+        AbstractConfigListEntry<?> autoTossStackBehindToggle = entryBuilder.startBooleanToggle(
+                Text.literal("Enable Auto Toss Stack Behind (180°)"),
+                config.isAutoTossStackBehindEnabled()
+        )
+        .setDefaultValue(false)
+        .setTooltip(Text.literal("Automatically tosses full stacks of specified items by rotating 180° and tossing them behind you. Only triggers when a full stack is present in main inventory."))
+        .setSaveConsumer(newValue -> {
+            modAutofish.getConfig().setAutoTossStackBehindEnabled(newValue);
+        })
+        .setYesNoTextSupplier(yesNoTextSupplier)
+        .build();
+
+        AbstractConfigListEntry<?> autoTossStackBehindItemsField = entryBuilder.startTextField(
+                Text.literal("Auto Toss Stack Behind Items (comma-separated)"),
+                config.getAutoTossStackBehindItems()
+        )
+        .setTooltip(Text.literal("List of items to toss as full stacks behind you. Use Minecraft item names or partial names, e.g.: pufferfish, bow, enchanted book, fishing rod"))
+        .setSaveConsumer(newValue -> {
+            modAutofish.getConfig().setAutoTossStackBehindItems(newValue);
+        })
+        .build();
+
         subCatBuilderAdvanced.add(toggleSoundDetection);
         subCatBuilderAdvanced.add(autoTossToggle);
         subCatBuilderAdvanced.add(autoTossItemsField);
+        subCatBuilderAdvanced.add(autoTossStackBehindToggle);
+        subCatBuilderAdvanced.add(autoTossStackBehindItemsField);
         subCatBuilderAdvanced.add(toggleForceMPDetection);
         subCatBuilderAdvanced.add(recastDelaySlider);
         subCatBuilderAdvanced.add(randomDelaySlider);

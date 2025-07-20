@@ -52,6 +52,16 @@ public class Autofish {
     private float originalYaw = 0f;
     private float originalPitch = 0f;
 
+    // --- Auto Toss Stack Behind state ---
+    private boolean rotatingToTossBehind = false;
+    private boolean rotatingBackBehind = false;
+    private boolean shouldTossBehind = true;
+    private float targetYawBehind = 0f;
+    private float targetPitchBehind = 0f;
+    private float originalYawBehind = 0f;
+    private float originalPitchBehind = 0f;
+    private int behindSlotToToss = -1;
+
     private float normalizeAngle(float angle) {
         angle = angle % 360f;
         if (angle >= 180f) angle -= 360f;
@@ -211,6 +221,99 @@ public class Autofish {
                     rotatingBack = false;
                     shouldToss = true; // allow next toss event
                 }
+            }
+        }
+
+        // Auto Toss Stack Behind logic (rotate 180 deg and toss full stacks from a separate list)
+        // --- Auto Toss Stack Behind logic (rotate 180 deg and toss full stacks from a separate list) ---
+        if (modAutofish.getConfig().isAutoTossStackBehindEnabled() && client.player != null && modAutofish.getConfig().isAutofishEnabled()) {
+            PlayerInventory inv = client.player.getInventory();
+            String[] behindList = modAutofish.getConfig().getAutoTossStackBehindItems().toLowerCase().split(",");
+            int stackSize = 64; // Default MC stack size, can be improved if needed
+            boolean foundFullStack = false;
+            int foundSlot = -1;
+            String foundName = null;
+            // Find a full stack of any item in the behind list
+            outer: for (int i = 9; i < inv.main.size(); i++) {
+                ItemStack stack = inv.main.get(i);
+                if (!stack.isEmpty() && stack.getCount() == stack.getMaxCount()) {
+                    String name = stack.getName().getString().toLowerCase();
+                    for (String s : behindList) {
+                        if (!s.trim().isEmpty() && name.contains(s.trim())) {
+                            foundFullStack = true;
+                            foundSlot = i;
+                            foundName = name;
+                            break outer;
+                        }
+                    }
+                }
+            }
+
+            // Initiate toss if found
+            if (foundFullStack) {
+                if (!rotatingToTossBehind && !rotatingBackBehind && shouldTossBehind) {
+                    originalYawBehind = client.player.getYaw();
+                    originalPitchBehind = client.player.getPitch();
+                    targetYawBehind = normalizeAngle(originalYawBehind + 180.0F); // 180 deg behind
+                    targetPitchBehind = 0.0F;
+                    rotatingToTossBehind = true;
+                    shouldTossBehind = false;
+                    behindSlotToToss = foundSlot;
+                }
+            } else if (!rotatingBackBehind && !rotatingToTossBehind) {
+                // If not rotating, allow next toss event
+                shouldTossBehind = true;
+            }
+        }
+
+        // --- Always finish behind-toss rotation if in progress, even if stack is gone ---
+        if (rotatingToTossBehind) {
+            float currentYawB = client.player.getYaw();
+            float currentPitchB = client.player.getPitch();
+            float newYawB = approachAngle(currentYawB, targetYawBehind, 20.0F);
+            float newPitchB = approachAngle(currentPitchB, targetPitchBehind, 20.0F);
+            client.player.setYaw(newYawB);
+            client.player.setPitch(newPitchB);
+            client.player.setHeadYaw(newYawB);
+            client.player.setBodyYaw(newYawB);
+            double x = client.player.getX();
+            double y = client.player.getY();
+            double z = client.player.getZ();
+            boolean onGround = client.player.isOnGround();
+            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.PositionAndOnGround(x, y, z, onGround));
+            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(newYawB, newPitchB, onGround));
+            if (Math.abs(normalizeAngle(newYawB - targetYawBehind)) < 1.0 && Math.abs(newPitchB - targetPitchBehind) < 1.0) {
+                // Toss the stack if still valid
+                if (behindSlotToToss >= 0 && client.player.getInventory().main.size() > behindSlotToToss) {
+                    ItemStack stack = client.player.getInventory().main.get(behindSlotToToss);
+                    if (!stack.isEmpty() && stack.getCount() == stack.getMaxCount()) {
+                        int syncId = client.player.currentScreenHandler.syncId;
+                        client.interactionManager.clickSlot(syncId, behindSlotToToss, 999, net.minecraft.screen.slot.SlotActionType.THROW, client.player);
+                    }
+                }
+                rotatingToTossBehind = false;
+                rotatingBackBehind = true;
+            }
+        }
+        if (rotatingBackBehind) {
+            float currentYawB = client.player.getYaw();
+            float currentPitchB = client.player.getPitch();
+            float newYawB = approachAngle(currentYawB, originalYawBehind, 20.0F);
+            float newPitchB = approachAngle(currentPitchB, originalPitchBehind, 20.0F);
+            client.player.setYaw(newYawB);
+            client.player.setPitch(newPitchB);
+            client.player.setHeadYaw(newYawB);
+            client.player.setBodyYaw(newYawB);
+            double x = client.player.getX();
+            double y = client.player.getY();
+            double z = client.player.getZ();
+            boolean onGround = client.player.isOnGround();
+            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.PositionAndOnGround(x, y, z, onGround));
+            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(newYawB, newPitchB, onGround));
+            if (Math.abs(normalizeAngle(newYawB - originalYawBehind)) < 1.0 && Math.abs(newPitchB - originalPitchBehind) < 1.0) {
+                rotatingBackBehind = false;
+                shouldTossBehind = true;
+                behindSlotToToss = -1;
             }
         }
 
