@@ -49,8 +49,6 @@ public class Autofish {
     private boolean shouldToss = true;
     private float targetYaw = 0f;
     private float targetPitch = 0f;
-    private float originalYaw = 0f;
-    private float originalPitch = 0f;
 
     // --- Auto Toss Stack Behind state ---
     private boolean rotatingToTossBehind = false;
@@ -58,9 +56,14 @@ public class Autofish {
     private boolean shouldTossBehind = true;
     private float targetYawBehind = 0f;
     private float targetPitchBehind = 0f;
-    private float originalYawBehind = 0f;
-    private float originalPitchBehind = 0f;
     private int behindSlotToToss = -1;
+
+    // --- Yaw/Pitch to return to after tosses ---
+    private float autofishYaw = 0f;
+    private float autofishPitch = 0f;
+
+    // --- Smooth rotation state for persistent recast ---
+    private boolean rotatingToAutofish = false;
 
     private float normalizeAngle(float angle) {
         angle = angle % 360f;
@@ -82,10 +85,25 @@ public class Autofish {
         this.client = MinecraftClient.getInstance();
         setDetection();
 
+        // Save autofishYaw/autofishPitch when autofish is enabled
+        modAutofish.getConfig().setAutofishEnabled(false); // force to false on init
+
         //Initiate the repeating action for persistent mode casting
         modAutofish.getScheduler().scheduleRepeatingAction(10000, () -> {
             if (!modAutofish.getConfig().isPersistentMode()) return;
-            if (!modAutofish.getConfig().isAutofishEnabled()) return;
+            if (!modAutofish.getConfig().isAutofishEnabled()) {
+                // If autofish just got enabled, save angles
+                if (client.player != null) {
+                    autofishYaw = client.player.getYaw();
+                    autofishPitch = client.player.getPitch();
+                }
+                return;
+            }
+            // If autofish is enabled and angles not set, set them
+            if (autofishYaw == 0f && autofishPitch == 0f && client.player != null) {
+                autofishYaw = client.player.getYaw();
+                autofishPitch = client.player.getPitch();
+            }
             boolean onlyAtCoords = modAutofish.getConfig().isOnlyAutofishAtSavedCoords();
             if (onlyAtCoords) {
                 double savedX = modAutofish.getConfig().getSavedX();
@@ -102,14 +120,44 @@ public class Autofish {
             if(!isHoldingFishingRod()) return;
             if(hookExists){
                 if(isBobberInWater()) return;
-                else useRod();
+                else {
+                    // Before recasting, smoothly rotate to autofishYaw/autofishPitch
+                    rotatingToAutofish = true;
+                    return;
+                }
+            } else {
+                if(modAutofish.getScheduler().isRecastQueued()) return;
+                // Before recasting, smoothly rotate to autofishYaw/autofishPitch
+                rotatingToAutofish = true;
+                return;
             }
-            if(modAutofish.getScheduler().isRecastQueued()) return;
-            useRod();
         });
     }
 
     public void tick(MinecraftClient client) {
+        // --- Smoothly rotate to autofishYaw/autofishPitch before recast if needed ---
+        if (rotatingToAutofish && client.player != null) {
+            float currentYaw = client.player.getYaw();
+            float currentPitch = client.player.getPitch();
+            float newYaw = approachAngle(currentYaw, autofishYaw, 10.0F);
+            float newPitch = approachAngle(currentPitch, autofishPitch, 10.0F);
+            client.player.setYaw(newYaw);
+            client.player.setPitch(newPitch);
+            client.player.setHeadYaw(newYaw);
+            client.player.setBodyYaw(newYaw);
+            double x = client.player.getX();
+            double y = client.player.getY();
+            double z = client.player.getZ();
+            boolean onGround = client.player.isOnGround();
+            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.PositionAndOnGround(x, y, z, onGround));
+            client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(newYaw, newPitch, onGround));
+            if (Math.abs(normalizeAngle(newYaw - autofishYaw)) < 1.0 && Math.abs(newPitch - autofishPitch) < 1.0) {
+                rotatingToAutofish = false;
+                useRod();
+            }
+            // Don't run any other tick logic while rotating
+            return;
+        }
 
         // Auto Toss Items logic (after autofish logic)
         if (modAutofish.getConfig().isAutoTossEnabled() && client.player != null && modAutofish.getConfig().isAutofishEnabled()) {
@@ -148,8 +196,6 @@ public class Autofish {
             if (full && hasMatching) {
                 // Set up target rotation if not already rotating
                 if (!rotatingToToss && !rotatingBack && shouldToss) {
-                    originalYaw = currentYaw;
-                    originalPitch = currentPitch;
                     targetYaw = normalizeAngle(currentYaw - 90.0F); // 90 deg left
                     targetPitch = 0.0F;
                     rotatingToToss = true;
@@ -199,9 +245,9 @@ public class Autofish {
                 }
             }
             if (rotatingBack) {
-                // Smoothly rotate back to original
-                float newYaw = approachAngle(currentYaw, originalYaw, 10.0F);
-                float newPitch = approachAngle(currentPitch, originalPitch, 10.0F);
+                // Smoothly rotate back to autofishYaw/autofishPitch
+                float newYaw = approachAngle(currentYaw, autofishYaw, 10.0F);
+                float newPitch = approachAngle(currentPitch, autofishPitch, 10.0F);
 
                 client.player.setYaw(newYaw);
                 client.player.setPitch(newPitch);
@@ -216,7 +262,7 @@ public class Autofish {
                 client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.PositionAndOnGround(x, y, z, onGround));
                 client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(newYaw, newPitch, onGround));
 
-                if (Math.abs(normalizeAngle(newYaw - originalYaw)) < 1.0 && Math.abs(newPitch - originalPitch) < 1.0) {
+                if (Math.abs(normalizeAngle(newYaw - autofishYaw)) < 1.0 && Math.abs(newPitch - autofishPitch) < 1.0) {
                     // Finished rotating back
                     rotatingBack = false;
                     shouldToss = true; // allow next toss event
@@ -252,9 +298,7 @@ public class Autofish {
             // Initiate toss if found
             if (foundFullStack) {
                 if (!rotatingToTossBehind && !rotatingBackBehind && shouldTossBehind) {
-                    originalYawBehind = client.player.getYaw();
-                    originalPitchBehind = client.player.getPitch();
-                    targetYawBehind = normalizeAngle(originalYawBehind + 180.0F); // 180 deg behind
+                    targetYawBehind = normalizeAngle(client.player.getYaw() + 180.0F); // 180 deg behind
                     targetPitchBehind = 0.0F;
                     rotatingToTossBehind = true;
                     shouldTossBehind = false;
@@ -298,8 +342,8 @@ public class Autofish {
         if (rotatingBackBehind) {
             float currentYawB = client.player.getYaw();
             float currentPitchB = client.player.getPitch();
-            float newYawB = approachAngle(currentYawB, originalYawBehind, 20.0F);
-            float newPitchB = approachAngle(currentPitchB, originalPitchBehind, 20.0F);
+            float newYawB = approachAngle(currentYawB, autofishYaw, 20.0F);
+            float newPitchB = approachAngle(currentPitchB, autofishPitch, 20.0F);
             client.player.setYaw(newYawB);
             client.player.setPitch(newPitchB);
             client.player.setHeadYaw(newYawB);
@@ -310,7 +354,7 @@ public class Autofish {
             boolean onGround = client.player.isOnGround();
             client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.PositionAndOnGround(x, y, z, onGround));
             client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(newYawB, newPitchB, onGround));
-            if (Math.abs(normalizeAngle(newYawB - originalYawBehind)) < 1.0 && Math.abs(newPitchB - originalPitchBehind) < 1.0) {
+            if (Math.abs(normalizeAngle(newYawB - autofishYaw)) < 1.0 && Math.abs(newPitchB - autofishPitch) < 1.0) {
                 rotatingBackBehind = false;
                 shouldTossBehind = true;
                 behindSlotToToss = -1;
