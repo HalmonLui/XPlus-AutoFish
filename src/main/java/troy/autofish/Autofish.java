@@ -58,6 +58,18 @@ public class Autofish {
     private float targetPitchBehind = 0f;
     private int behindSlotToToss = -1;
 
+    // --- Blossom/Auto Flower state ---
+    private long lastBlossomTime = 0L;
+    private int blossomStep = 0;
+    private boolean rotatingToBlossom = false;
+    private float blossomTargetYaw = 0f;
+    private float blossomTargetPitch = 90f; // look straight down
+    private float blossomReturnYaw = 0f;
+    private float blossomReturnPitch = 0f;
+    private boolean returningFromBlossom = false;
+    private int blossomHotbarSlot = -1;
+    private int blossomTicksWaited = 0;
+
     // --- Yaw/Pitch to return to after tosses ---
     private float autofishYaw = 0f;
     private float autofishPitch = 0f;
@@ -134,7 +146,229 @@ public class Autofish {
         });
     }
 
+    // Helper to find hotbar slot by item name substring
+    private int findHotbarSlot(PlayerInventory inv, String namePart) {
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = inv.getStack(i);
+            if (!stack.isEmpty() && stack.getName().getString().toLowerCase().contains(namePart.toLowerCase())) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    // Helper to check if the block below is a flower (covers all vanilla flowers)
+    private boolean isFlowerBlock(MinecraftClient client, BlockPos pos) {
+        if (client.world == null) return false;
+        String key = client.world.getBlockState(pos).getBlock().getTranslationKey().toLowerCase();
+        return key.contains("flower") || key.contains("lily") || key.contains("dandelion") || key.contains("poppy") ||
+               key.contains("tulip") || key.contains("orchid") || key.contains("allium") || key.contains("rose") ||
+               key.contains("peony") || key.contains("cornflower") || key.contains("azure") || key.contains("bluet") ||
+               key.contains("oxeye") || key.contains("sunflower") || key.contains("lilac") || key.contains("rose bush") || 
+               key.contains("wither rose") || key.contains("daisy") || key.contains("torchflower");
+    }
+
     public void tick(MinecraftClient client) {
+
+        // --- Blossom/Auto Flower logic ---
+        if (modAutofish.getConfig().isAutoFlowerEnabled() && client.player != null) {
+            boolean onlyAtCoords = modAutofish.getConfig().isOnlyAutofishAtSavedCoords();
+            double savedX = modAutofish.getConfig().getSavedX();
+            double savedY = modAutofish.getConfig().getSavedY();
+            double savedZ = modAutofish.getConfig().getSavedZ();
+            double px = client.player.getX();
+            double py = client.player.getY();
+            double pz = client.player.getZ();
+            double dist = Math.sqrt(Math.pow(px - savedX, 2) + Math.pow(py - savedY, 2) + Math.pow(pz - savedZ, 2));
+            boolean atCoords = !onlyAtCoords || dist < 1.0;
+            long now = System.currentTimeMillis();
+            if (atCoords && (now - lastBlossomTime > 16000) && !rotatingToBlossom && !returningFromBlossom) {
+                blossomStep = 0;
+                rotatingToBlossom = true;
+                blossomTargetYaw = client.player.getYaw();
+                blossomReturnYaw = autofishYaw;
+                blossomReturnPitch = autofishPitch;
+                lastBlossomTime = now;
+                blossomTicksWaited = 0;
+            }
+            // Smoothly rotate to look down for blossom
+            if (rotatingToBlossom) {
+                float currentYaw = client.player.getYaw();
+                float currentPitch = client.player.getPitch();
+                float newYaw = approachAngle(currentYaw, blossomTargetYaw, 10.0F);
+                float newPitch = approachAngle(currentPitch, 90.0F, 10.0F);
+                client.player.setYaw(newYaw);
+                client.player.setPitch(newPitch);
+                client.player.setHeadYaw(newYaw);
+                client.player.setBodyYaw(newYaw);
+                double x = client.player.getX();
+                double y = client.player.getY();
+                double z = client.player.getZ();
+                boolean onGround = client.player.isOnGround();
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.PositionAndOnGround(x, y, z, onGround));
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(newYaw, newPitch, onGround));
+                if (Math.abs(normalizeAngle(newYaw - blossomTargetYaw)) < 1.0 && Math.abs(newPitch - 90.0F) < 1.0) {
+                    rotatingToBlossom = false;
+                    blossomStep = 1;
+                    blossomTicksWaited = 0;
+                }
+                return;
+            }
+            // Blossom sequence steps
+            if (blossomStep > 0) {
+                // Wait more ticks between actions for reliability (e.g., 12 ticks ≈ 0.6s)
+                blossomTicksWaited++;
+                if (blossomTicksWaited < 12) return;
+                blossomTicksWaited = 0;
+                PlayerInventory inv = client.player.getInventory();
+                int slot = -1;
+                BlockPos below = client.player.getBlockPos().down();
+                switch (blossomStep) {
+                    case 1: // Fawnbloom: swap & use (right click top face of block below)
+                        slot = findHotbarSlot(inv, "fawnbloom");
+                        if (slot != -1) {
+                            inv.selectedSlot = slot;
+                            // Look straight down at the flower
+                            client.player.setPitch(90.0F);
+                            client.player.setYaw(client.player.getYaw());
+                            // Simulate right click on the top face of the block below, at the center
+                            net.minecraft.util.math.Vec3d hitPos = new net.minecraft.util.math.Vec3d(
+                                below.getX() + 0.5,
+                                below.getY() + 1.0,
+                                below.getZ() + 0.5
+                            );
+                            client.interactionManager.interactBlock(
+                                client.player,
+                                Hand.MAIN_HAND,
+                                new net.minecraft.util.hit.BlockHitResult(
+                                    hitPos,
+                                    net.minecraft.util.math.Direction.UP,
+                                    below,
+                                    false
+                                )
+                            );
+                        }
+                        blossomStep++;
+                        break;
+                    case 2: // Silas Shears: swap only
+                        slot = findHotbarSlot(inv, "silas shears");
+                        if (slot != -1) {
+                            inv.selectedSlot = slot;
+                        }
+                        blossomStep++;
+                        break;
+                    case 3: // Silas Shears: swing & break (check both below and at player pos)
+                        slot = findHotbarSlot(inv, "silas shears");
+                        BlockPos at = client.player.getBlockPos();
+                        if (slot != -1) {
+                            boolean broke = false;
+                            if (isFlowerBlock(client, below)) {
+                                client.player.swingHand(Hand.MAIN_HAND);
+                                client.interactionManager.attackBlock(below, net.minecraft.util.math.Direction.UP);
+                                client.interactionManager.attackBlock(below, client.player.getHorizontalFacing());
+                                broke = true;
+                            }
+                            if (isFlowerBlock(client, at)) {
+                                client.player.swingHand(Hand.MAIN_HAND);
+                                client.interactionManager.attackBlock(at, net.minecraft.util.math.Direction.UP);
+                                client.interactionManager.attackBlock(at, client.player.getHorizontalFacing());
+                                broke = true;
+                            }
+                        }
+                        blossomStep++;
+                        break;
+                    case 4: // Freyja's Blessing: swap & use (plant sunflower by item type)
+                        // Find sunflower in hotbar by item type, not name
+                        slot = -1;
+                        for (int i = 0; i < 9; i++) {
+                            ItemStack stack = inv.getStack(i);
+                            if (!stack.isEmpty() && stack.getItem() == net.minecraft.item.Items.SUNFLOWER) {
+                                slot = i;
+                                break;
+                            }
+                        }
+                        if (slot != -1) {
+                            inv.selectedSlot = slot;
+                            // Look straight down at the flower
+                            client.player.setPitch(90.0F);
+                            client.player.setYaw(client.player.getYaw());
+                            // Simulate right click on the top face of the block below, at the center
+                            net.minecraft.util.math.Vec3d hitPos = new net.minecraft.util.math.Vec3d(
+                                below.getX() + 0.5,
+                                below.getY() + 1.0,
+                                below.getZ() + 0.5
+                            );
+                            client.interactionManager.interactBlock(
+                                client.player,
+                                Hand.MAIN_HAND,
+                                new net.minecraft.util.hit.BlockHitResult(
+                                    hitPos,
+                                    net.minecraft.util.math.Direction.UP,
+                                    below,
+                                    false
+                                )
+                            );
+                        }
+                        blossomStep++;
+                        break;
+                    case 5: // Flower Wand: swap only
+                        slot = findHotbarSlot(inv, "flower wand");
+                        if (slot != -1) {
+                            inv.selectedSlot = slot;
+                        }
+                        blossomStep++;
+                        break;
+                    case 6: // Flower Wand: swing & break (check both below and at player pos)
+                        slot = findHotbarSlot(inv, "flower wand");
+                        at = client.player.getBlockPos();
+                        if (slot != -1) {
+                            boolean broke = false;
+                            if (isFlowerBlock(client, below)) {
+                                client.player.swingHand(Hand.MAIN_HAND);
+                                client.interactionManager.attackBlock(below, net.minecraft.util.math.Direction.UP);
+                                client.interactionManager.attackBlock(below, client.player.getHorizontalFacing());
+                                broke = true;
+                            }
+                            if (isFlowerBlock(client, at)) {
+                                client.player.swingHand(Hand.MAIN_HAND);
+                                client.interactionManager.attackBlock(at, net.minecraft.util.math.Direction.UP);
+                                client.interactionManager.attackBlock(at, client.player.getHorizontalFacing());
+                                broke = true;
+                            }
+                        }
+                        blossomStep++;
+                        break;
+                    case 7: // Return to autofish view
+                        returningFromBlossom = true;
+                        blossomStep = 0;
+                        break;
+                }
+                return;
+            }
+
+            // Smoothly rotate back to autofishYaw/autofishPitch after blossom
+            if (returningFromBlossom) {
+                float currentYaw = client.player.getYaw();
+                float currentPitch = client.player.getPitch();
+                float newYaw = approachAngle(currentYaw, autofishYaw, 10.0F);
+                float newPitch = approachAngle(currentPitch, autofishPitch, 10.0F);
+                client.player.setYaw(newYaw);
+                client.player.setPitch(newPitch);
+                client.player.setHeadYaw(newYaw);
+                client.player.setBodyYaw(newYaw);
+                double x = client.player.getX();
+                double y = client.player.getY();
+                double z = client.player.getZ();
+                boolean onGround = client.player.isOnGround();
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.PositionAndOnGround(x, y, z, onGround));
+                client.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(newYaw, newPitch, onGround));
+                if (Math.abs(normalizeAngle(newYaw - autofishYaw)) < 1.0 && Math.abs(newPitch - autofishPitch) < 1.0) {
+                    returningFromBlossom = false;
+                }
+                return;
+            }
+        }
+
         // --- Smoothly rotate to autofishYaw/autofishPitch before recast if needed ---
         if (rotatingToAutofish && client.player != null) {
             float currentYaw = client.player.getYaw();

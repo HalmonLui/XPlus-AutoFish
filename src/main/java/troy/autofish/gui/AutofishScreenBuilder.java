@@ -313,8 +313,26 @@ public class AutofishScreenBuilder {
         subCatBuilderAdvanced.add(clearLagRegexField);
         subCatBuilderAdvanced.setExpanded(true);
 
+
         configCat.addEntry(subCatBuilderBasic.build());
         configCat.addEntry(subCatBuilderAdvanced.build());
+
+        // --- Blossom Section ---
+        SubCategoryBuilder subCatBuilderBlossom = entryBuilder.startSubCategory(Text.literal("Blossom"));
+        AbstractConfigListEntry<?> autoFlowerToggle = entryBuilder.startBooleanToggle(
+                Text.literal("Auto Flower"),
+                config.isAutoFlowerEnabled()
+        )
+        .setDefaultValue(false)
+        .setTooltip(Text.literal("Automatically uses Fawnbloom, Silas Shears, Freyja's Blessing, and Flower Wand in sequence every 16 seconds if at saved coords."))
+        .setSaveConsumer(newValue -> {
+            modAutofish.getConfig().setAutoFlowerEnabled(newValue);
+        })
+        .setYesNoTextSupplier(yesNoTextSupplier)
+        .build();
+        subCatBuilderBlossom.add(autoFlowerToggle);
+        subCatBuilderBlossom.setExpanded(true);
+        configCat.addEntry(subCatBuilderBlossom.build());
 
         return builder.build();
 

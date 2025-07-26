@@ -1,4 +1,3 @@
-
 package troy.autofish.config;
 
 import com.google.gson.annotations.Expose;
@@ -30,6 +29,12 @@ public class Config {
     // Auto Toss Stack Behind
     @Expose private boolean autoTossStackBehindEnabled = false;
     @Expose private String autoTossStackBehindItems = "pufferfish,bow,enchanted book,fishing rod";
+
+    // Blossom/Auto Flower
+    @Expose private boolean autoFlowerEnabled = false;
+
+    public boolean isAutoFlowerEnabled() { return autoFlowerEnabled; }
+    public void setAutoFlowerEnabled(boolean value) { this.autoFlowerEnabled = value; }
 
     public boolean isAutoTossEnabled() { return autoTossEnabled; }
     public void setAutoTossEnabled(boolean value) { this.autoTossEnabled = value; }
